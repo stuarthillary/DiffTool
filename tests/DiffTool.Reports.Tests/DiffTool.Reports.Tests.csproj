@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DiffTool.Reports.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="Imposter" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DiffTool.Core\DiffTool.Core.csproj" />
+    <ProjectReference Include="..\..\src\DiffTool.Reports\DiffTool.Reports.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,10 @@
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.DotSettings.user
+*.csproj.nuget.*
+project.lock.json
+

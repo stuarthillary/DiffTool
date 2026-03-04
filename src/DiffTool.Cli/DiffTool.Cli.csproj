@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DiffTool.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiffTool.Core\DiffTool.Core.csproj" />
+    <ProjectReference Include="..\DiffTool.Reports\DiffTool.Reports.csproj" />
+  </ItemGroup>
+
+</Project>
