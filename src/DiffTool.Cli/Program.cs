@@ -1,4 +1,10 @@
 using System.CommandLine;
+using System.Text.Json;
+using DiffTool.Core.Diffing;
+using DiffTool.Core.Models;
+using DiffTool.Core.Scanning;
+using DiffTool.Core.Serialization;
+using DiffTool.Reports;
 
 namespace DiffTool.Cli;
 
@@ -8,6 +14,12 @@ namespace DiffTool.Cli;
 /// </summary>
 public static class Program
 {
+    private static readonly JsonSerializerOptions s_diffJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     public static int Main(string[] args)
     {
         var rootCommand = new RootCommand("DiffTool — scan directory trees, compare snapshots, generate drift reports.");
@@ -40,7 +52,30 @@ public static class Program
         {
             var directory = parseResult.GetValue(directoryArg);
             var output = parseResult.GetValue(outputOption);
-            Console.WriteLine($"[stub] snapshot: {directory?.FullName} -> {output?.FullName ?? "stdout"}");
+
+            if (directory == null || !directory.Exists)
+            {
+                Console.Error.WriteLine($"Error: directory '{directory?.FullName}' does not exist.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            var scanner = new DirectoryScanner(new PhysicalFileSystem());
+            var snapshot = scanner.ScanAsync(directory.FullName, CancellationToken.None).GetAwaiter().GetResult();
+
+            var serializer = new JsonSnapshotSerializer();
+
+            if (output != null)
+            {
+                using var stream = output.Open(FileMode.Create, FileAccess.Write);
+                serializer.SerializeAsync(snapshot, stream, CancellationToken.None).GetAwaiter().GetResult();
+                Console.WriteLine($"Snapshot saved to {output.FullName}");
+            }
+            else
+            {
+                using var stream = Console.OpenStandardOutput();
+                serializer.SerializeAsync(snapshot, stream, CancellationToken.None).GetAwaiter().GetResult();
+            }
         });
 
         return command;
@@ -73,7 +108,49 @@ public static class Program
             var left = parseResult.GetValue(leftArg);
             var right = parseResult.GetValue(rightArg);
             var output = parseResult.GetValue(outputOption);
-            Console.WriteLine($"[stub] diff: {left?.FullName} vs {right?.FullName} -> {output?.FullName ?? "stdout"}");
+
+            if (left == null || !left.Exists)
+            {
+                Console.Error.WriteLine($"Error: left snapshot file '{left?.FullName}' does not exist.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            if (right == null || !right.Exists)
+            {
+                Console.Error.WriteLine($"Error: right snapshot file '{right?.FullName}' does not exist.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            var serializer = new JsonSnapshotSerializer();
+
+            DirectorySnapshot leftSnapshot;
+            DirectorySnapshot rightSnapshot;
+
+            using (var leftStream = left.OpenRead())
+                leftSnapshot = serializer.DeserializeAsync(leftStream, CancellationToken.None).GetAwaiter().GetResult();
+
+            using (var rightStream = right.OpenRead())
+                rightSnapshot = serializer.DeserializeAsync(rightStream, CancellationToken.None).GetAwaiter().GetResult();
+
+            var differ = new SnapshotDiffer();
+            var diff = differ.Compare(leftSnapshot, rightSnapshot);
+
+            if (output != null)
+            {
+                using var stream = output.Open(FileMode.Create, FileAccess.Write);
+                JsonSerializer.SerializeAsync(stream, diff, s_diffJsonOptions, CancellationToken.None).GetAwaiter().GetResult();
+                Console.WriteLine($"Diff saved to {output.FullName}");
+            }
+            else
+            {
+                using var stream = Console.OpenStandardOutput();
+                JsonSerializer.SerializeAsync(stream, diff, s_diffJsonOptions, CancellationToken.None).GetAwaiter().GetResult();
+            }
+
+            var summary = diff.Summary;
+            Console.WriteLine($"{summary.Added} added, {summary.Removed} removed, {summary.Modified} modified, {summary.Unchanged} unchanged");
         });
 
         return command;
@@ -107,7 +184,59 @@ public static class Program
             var diffFile = parseResult.GetValue(diffArg);
             var format = parseResult.GetValue(formatOption);
             var output = parseResult.GetValue(outputOption);
-            Console.WriteLine($"[stub] report: {diffFile?.FullName} --format {format} -> {output?.FullName ?? "stdout"}");
+
+            if (diffFile == null || !diffFile.Exists)
+            {
+                Console.Error.WriteLine($"Error: diff file '{diffFile?.FullName}' does not exist.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            SnapshotDiff? diff;
+            using (var diffStream = diffFile.OpenRead())
+            {
+                diff = JsonSerializer.DeserializeAsync<SnapshotDiff>(diffStream, s_diffJsonOptions, CancellationToken.None).GetAwaiter().GetResult();
+            }
+
+            if (diff == null)
+            {
+                Console.Error.WriteLine($"Error: failed to deserialize diff file '{diffFile.FullName}'.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            IReportFormatter? formatter = format?.ToLowerInvariant() switch
+            {
+                "html" => new HtmlReportFormatter(),
+                _ => null
+            };
+
+            if (formatter == null)
+            {
+                Console.Error.WriteLine($"Error: unknown report format '{format}'. Supported formats: html.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            try
+            {
+                if (output != null)
+                {
+                    using var stream = output.Open(FileMode.Create, FileAccess.Write);
+                    formatter.RenderAsync(diff, stream, CancellationToken.None).GetAwaiter().GetResult();
+                    Console.WriteLine($"Report saved to {output.FullName}");
+                }
+                else
+                {
+                    using var stream = Console.OpenStandardOutput();
+                    formatter.RenderAsync(diff, stream, CancellationToken.None).GetAwaiter().GetResult();
+                }
+            }
+            catch (NotImplementedException)
+            {
+                Console.Error.WriteLine($"Report format '{format}' is not yet implemented.");
+                Environment.ExitCode = 2;
+            }
         });
 
         return command;
