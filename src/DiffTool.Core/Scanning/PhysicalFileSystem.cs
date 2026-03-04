@@ -8,37 +8,25 @@ public sealed class PhysicalFileSystem : IFileSystem
 {
     /// <inheritdoc />
     public IEnumerable<string> EnumerateFileSystemEntries(string rootPath, string searchPattern, SearchOption searchOption)
-    {
-        throw new NotImplementedException();
-    }
+        => Directory.EnumerateFileSystemEntries(rootPath, searchPattern, searchOption);
 
     /// <inheritdoc />
     public bool IsDirectory(string path)
-    {
-        throw new NotImplementedException();
-    }
+        => (File.GetAttributes(path) & FileAttributes.Directory) != 0;
 
     /// <inheritdoc />
     public Stream OpenRead(string path)
-    {
-        throw new NotImplementedException();
-    }
+        => File.OpenRead(path);
 
     /// <inheritdoc />
     public long GetFileSize(string path)
-    {
-        throw new NotImplementedException();
-    }
+        => new FileInfo(path).Length;
 
     /// <inheritdoc />
     public DateTimeOffset GetLastWriteTimeUtc(string path)
-    {
-        throw new NotImplementedException();
-    }
+        => new DateTimeOffset(new FileInfo(path).LastWriteTimeUtc, TimeSpan.Zero);
 
     /// <inheritdoc />
     public string GetAttributes(string path)
-    {
-        throw new NotImplementedException();
-    }
+        => File.GetAttributes(path).ToString();
 }
