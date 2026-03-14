@@ -1,5 +1,6 @@
 using DiffTool.Core.Models;
 using DiffTool.Core.Scanning;
+using AssemblyInfo = DiffTool.Core.Models.AssemblyInfo;
 
 namespace DiffTool.Core.Tests.Scanning;
 
@@ -8,6 +9,21 @@ namespace DiffTool.Core.Tests.Scanning;
 // Chosen over Imposter because multi-method setups with per-path return values
 // are far cleaner in a real class than in chained mock configuration.
 // ---------------------------------------------------------------------------
+
+internal sealed class FakeAssemblyInspector : IAssemblyInspector
+{
+    private readonly AssemblyInfo? _result;
+
+    public FakeAssemblyInspector(AssemblyInfo? result) => _result = result;
+
+    public int CallCount { get; private set; }
+
+    public AssemblyInfo? TryInspect(Stream stream)
+    {
+        CallCount++;
+        return _result;
+    }
+}
 
 internal sealed class FakeFileSystem : IFileSystem
 {
@@ -282,5 +298,95 @@ public class DirectoryScannerTests
         await Assert.That(snapshot.Entries[0].Hash).IsNull();
         // SizeBytes is expected to be null if the scanner zeroes out partial data on error
         await Assert.That(snapshot.Entries[0].SizeBytes).IsNull();
+    }
+
+    // -----------------------------------------------------------------------
+    // 11. Assembly inspection — DLL with inspector populates AssemblyInfo
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ScanAsync_DllWithInspector_PopulatesAssemblyInfo()
+    {
+        var expectedInfo = new AssemblyInfo { Name = "TestLib", Version = "2.0.0.0", PublicTypes = [] };
+        var inspector = new FakeAssemblyInspector(expectedInfo);
+        var fs = new FakeFileSystem(RootPath);
+        fs.AddFile("lib.dll", 4096L, DateTimeOffset.UtcNow, "Archive", new byte[] { 1, 2, 3, 4 });
+        var scanner = new DirectoryScanner(fs, inspector);
+
+        var snapshot = await scanner.ScanAsync(RootPath);
+
+        await Assert.That(snapshot.Entries[0].AssemblyInfo).IsNotNull();
+        await Assert.That(snapshot.Entries[0].AssemblyInfo!.Name).IsEqualTo("TestLib");
+        await Assert.That(inspector.CallCount).IsEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------------
+    // 12. Assembly inspection — .exe also triggers inspector
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ScanAsync_ExeWithInspector_PopulatesAssemblyInfo()
+    {
+        var expectedInfo = new AssemblyInfo { Name = "TestApp", Version = "1.0.0.0", PublicTypes = [] };
+        var inspector = new FakeAssemblyInspector(expectedInfo);
+        var fs = new FakeFileSystem(RootPath);
+        fs.AddFile("app.exe", 8192L, DateTimeOffset.UtcNow, "Archive", new byte[] { 1, 2, 3, 4 });
+        var scanner = new DirectoryScanner(fs, inspector);
+
+        var snapshot = await scanner.ScanAsync(RootPath);
+
+        await Assert.That(snapshot.Entries[0].AssemblyInfo).IsNotNull();
+    }
+
+    // -----------------------------------------------------------------------
+    // 13. Assembly inspection — non-.NET binary inspector returns null
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ScanAsync_DllWhereInspectorReturnsNull_AssemblyInfoIsNull()
+    {
+        var inspector = new FakeAssemblyInspector(null);
+        var fs = new FakeFileSystem(RootPath);
+        fs.AddFile("native.dll", 1024L, DateTimeOffset.UtcNow, "Archive", new byte[] { 1, 2, 3 });
+        var scanner = new DirectoryScanner(fs, inspector);
+
+        var snapshot = await scanner.ScanAsync(RootPath);
+
+        await Assert.That(snapshot.Entries[0].AssemblyInfo).IsNull();
+        await Assert.That(inspector.CallCount).IsEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------------
+    // 14. Assembly inspection — non-binary files do not invoke inspector
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ScanAsync_TextFileWithInspector_InspectorNotCalled()
+    {
+        var inspector = new FakeAssemblyInspector(null);
+        var fs = new FakeFileSystem(RootPath);
+        fs.AddFile("readme.txt", 100L, DateTimeOffset.UtcNow, "Archive", new byte[] { 1 });
+        var scanner = new DirectoryScanner(fs, inspector);
+
+        var snapshot = await scanner.ScanAsync(RootPath);
+
+        await Assert.That(inspector.CallCount).IsEqualTo(0);
+        await Assert.That(snapshot.Entries[0].AssemblyInfo).IsNull();
+    }
+
+    // -----------------------------------------------------------------------
+    // 15. Assembly inspection — no inspector means AssemblyInfo is always null
+    // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ScanAsync_DllWithoutInspector_AssemblyInfoIsNull()
+    {
+        var fs = new FakeFileSystem(RootPath);
+        fs.AddFile("lib.dll", 1024L, DateTimeOffset.UtcNow, "Archive", new byte[] { 1, 2, 3 });
+        var scanner = new DirectoryScanner(fs); // no inspector
+
+        var snapshot = await scanner.ScanAsync(RootPath);
+
+        await Assert.That(snapshot.Entries[0].AssemblyInfo).IsNull();
     }
 }

@@ -1,5 +1,6 @@
 <Project>
   <ItemGroup>
+    <PackageVersion Include="Mono.Cecil" Version="0.11.6" />
     <PackageVersion Include="System.CommandLine" Version="2.0.3" />
     <PackageVersion Include="TUnit" Version="1.16.4" />
     <PackageVersion Include="Imposter" Version="0.1.0" />

@@ -11,10 +11,12 @@ namespace DiffTool.Core.Scanning;
 public sealed class DirectoryScanner
 {
     private readonly IFileSystem _fileSystem;
+    private readonly IAssemblyInspector? _assemblyInspector;
 
-    public DirectoryScanner(IFileSystem fileSystem)
+    public DirectoryScanner(IFileSystem fileSystem, IAssemblyInspector? assemblyInspector = null)
     {
         _fileSystem = fileSystem;
+        _assemblyInspector = assemblyInspector;
     }
 
     /// <summary>
@@ -54,6 +56,7 @@ public sealed class DirectoryScanner
                 string? hash = null;
                 DateTimeOffset lastModified;
                 string? attributes = null;
+                AssemblyInfo? assemblyInfo = null;
 
                 try
                 {
@@ -72,6 +75,19 @@ public sealed class DirectoryScanner
                     size = null;
                 }
 
+                if (_assemblyInspector != null && hash != null && IsAssemblyFile(path))
+                {
+                    try
+                    {
+                        await using var assemblyStream = _fileSystem.OpenRead(path);
+                        assemblyInfo = _assemblyInspector.TryInspect(assemblyStream);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        Debug.WriteLine($"[DirectoryScanner] Could not inspect assembly '{path}': {ex.Message}");
+                    }
+                }
+
                 entries.Add(new FileEntry
                 {
                     RelativePath = relative,
@@ -80,6 +96,7 @@ public sealed class DirectoryScanner
                     Hash = hash,
                     LastModifiedUtc = lastModified,
                     Attributes = attributes,
+                    AssemblyInfo = assemblyInfo,
                 });
             }
         }
@@ -93,5 +110,12 @@ public sealed class DirectoryScanner
             Entries = entries,
             MachineName = Environment.MachineName,
         };
+    }
+
+    private static bool IsAssemblyFile(string path)
+    {
+        var ext = Path.GetExtension(path.AsSpan());
+        return ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".exe", StringComparison.OrdinalIgnoreCase);
     }
 }

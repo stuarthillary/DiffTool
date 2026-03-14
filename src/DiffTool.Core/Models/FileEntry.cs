@@ -34,4 +34,11 @@ public sealed class FileEntry
     /// File attributes/permissions as a string (e.g., "rwxr-xr-x" on Unix, "ReadOnly, Archive" on Windows).
     /// </summary>
     public string? Attributes { get; init; }
+
+    /// <summary>
+    /// .NET assembly metadata extracted by <see cref="DiffTool.Core.Scanning.IAssemblyInspector"/>.
+    /// Populated only for .dll/.exe files when an inspector is configured on <see cref="DiffTool.Core.Scanning.DirectoryScanner"/>.
+    /// Null for directories, non-.NET binaries, and unreadable files.
+    /// </summary>
+    public AssemblyInfo? AssemblyInfo { get; init; }
 }
