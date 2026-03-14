@@ -349,6 +349,95 @@ public sealed class SnapshotDifferTests
         await Assert.That(entry.ChangedProperties.Count).IsEqualTo(4);
     }
 
+    // ── Assembly diff integration ─────────────────────────────────────────────
+
+    private static AssemblyInfo MakeAssemblyInfo(string version, params AssemblyTypeInfo[] types)
+        => new()
+        {
+            Name        = "Test",
+            Version     = version,
+            PublicTypes = types.OrderBy(t => t.FullName).ToList().AsReadOnly(),
+        };
+
+    private static AssemblyTypeInfo MakeTypeInfo(string name, params AssemblyMethodInfo[] methods)
+        => new()
+        {
+            FullName   = name,
+            Kind       = "class",
+            Interfaces = [],
+            Modifiers  = [],
+            Methods    = methods.ToList().AsReadOnly(),
+            Properties = [],
+            Fields     = [],
+        };
+
+    private static AssemblyMethodInfo MakeMethodInfo(string name)
+        => new() { Name = name, ReturnType = "System.Void", Parameters = [], Modifiers = [] };
+
+    [Test]
+    public async Task ModifiedAssembly_WithApiChanges_AssemblyDiffPopulatedAndInChangedProperties()
+    {
+        var differ = new SnapshotDiffer();
+
+        var leftInfo  = MakeAssemblyInfo("1.0.0.0", MakeTypeInfo("Foo.Scanner", MakeMethodInfo("ScanAsync")));
+        var rightInfo = MakeAssemblyInfo("2.0.0.0",
+            MakeTypeInfo("Foo.Scanner", MakeMethodInfo("ScanAsync"), MakeMethodInfo("ScanDeepAsync")));
+
+        var left = MakeSnapshot("C:/left", FixedTime,
+            new FileEntry { RelativePath = "lib.dll", SizeBytes = 100, Hash = "aaa", LastModifiedUtc = FixedTime, AssemblyInfo = leftInfo });
+        var right = MakeSnapshot("C:/right", FixedTime2,
+            new FileEntry { RelativePath = "lib.dll", SizeBytes = 200, Hash = "bbb", LastModifiedUtc = FixedTime2, AssemblyInfo = rightInfo });
+
+        var result = differ.Compare(left, right);
+
+        var entry = result.Entries[0];
+        await Assert.That(entry.Kind).IsEqualTo(DiffKind.Modified);
+        await Assert.That(entry.AssemblyDiff).IsNotNull();
+        await Assert.That(entry.ChangedProperties.Contains("AssemblyInfo")).IsTrue();
+        await Assert.That(entry.AssemblyDiff!.VersionChanged).IsTrue();
+        await Assert.That(entry.AssemblyDiff.ModifiedTypes.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ModifiedAssembly_SameApiSurface_AssemblyDiffIsNull()
+    {
+        var differ = new SnapshotDiffer();
+
+        // Same types and methods — only hash/size differ (internal implementation change).
+        var info = MakeAssemblyInfo("1.0.0.0", MakeTypeInfo("Foo.Scanner", MakeMethodInfo("ScanAsync")));
+
+        var left = MakeSnapshot("C:/left", FixedTime,
+            new FileEntry { RelativePath = "lib.dll", SizeBytes = 100, Hash = "aaa", LastModifiedUtc = FixedTime, AssemblyInfo = info });
+        var right = MakeSnapshot("C:/right", FixedTime2,
+            new FileEntry { RelativePath = "lib.dll", SizeBytes = 200, Hash = "bbb", LastModifiedUtc = FixedTime2, AssemblyInfo = info });
+
+        var result = differ.Compare(left, right);
+
+        var entry = result.Entries[0];
+        await Assert.That(entry.Kind).IsEqualTo(DiffKind.Modified);
+        await Assert.That(entry.AssemblyDiff).IsNull();
+        await Assert.That(entry.ChangedProperties.Contains("AssemblyInfo")).IsFalse();
+        await Assert.That(entry.ChangedProperties.Contains("Hash")).IsTrue();
+    }
+
+    [Test]
+    public async Task AddedAssemblyEntry_AssemblyDiffIsNull()
+    {
+        var differ = new SnapshotDiffer();
+
+        var info  = MakeAssemblyInfo("1.0.0.0", MakeTypeInfo("Foo.Bar"));
+        var left  = MakeSnapshot("C:/left", FixedTime);
+        var right = MakeSnapshot("C:/right", FixedTime2,
+            new FileEntry { RelativePath = "new.dll", SizeBytes = 100, Hash = "abc", LastModifiedUtc = FixedTime2, AssemblyInfo = info });
+
+        var result = differ.Compare(left, right);
+
+        var entry = result.Entries[0];
+        await Assert.That(entry.Kind).IsEqualTo(DiffKind.Added);
+        await Assert.That(entry.AssemblyDiff).IsNull();
+        await Assert.That(entry.Right!.AssemblyInfo).IsNotNull();
+    }
+
     [Test]
     public async Task EntriesAreSortedByRelativePath()
     {

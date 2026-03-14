@@ -8,6 +8,8 @@ namespace DiffTool.Core.Diffing;
 /// </summary>
 public sealed class SnapshotDiffer
 {
+    private static readonly AssemblyDiffer s_assemblyDiffer = new();
+
     /// <summary>
     /// Compares two snapshots and produces a diff result.
     /// </summary>
@@ -72,7 +74,7 @@ public sealed class SnapshotDiffer
                 var rightFile = rightEntry!;
                 var changedProps = new List<string>();
                 bool isUnchanged = false;
-                
+
                 if (leftFile.Hash != null && rightFile.Hash != null && leftFile.Hash == rightFile.Hash)
                 {
                     isUnchanged = true;
@@ -83,35 +85,47 @@ public sealed class SnapshotDiffer
                     {
                         changedProps.Add("Hash");
                     }
-                    
+
                     if (leftFile.SizeBytes != rightFile.SizeBytes)
                     {
                         changedProps.Add("SizeBytes");
                     }
-                    
+
                     if (leftFile.LastModifiedUtc != rightFile.LastModifiedUtc)
                     {
                         changedProps.Add("LastModifiedUtc");
                     }
-                    
+
                     if (leftFile.Attributes != rightFile.Attributes && leftFile.Attributes != null && rightFile.Attributes != null)
                     {
                         changedProps.Add("Attributes");
                     }
-                    
+
                     if (leftFile.IsDirectory != rightFile.IsDirectory)
                     {
                         changedProps.Add("IsDirectory");
                     }
                 }
-                
+
+                AssemblyDiff? assemblyDiff = null;
+                if (!isUnchanged && leftFile.AssemblyInfo != null && rightFile.AssemblyInfo != null)
+                {
+                    var candidate = s_assemblyDiffer.Compare(leftFile.AssemblyInfo, rightFile.AssemblyInfo);
+                    if (candidate.HasChanges)
+                    {
+                        assemblyDiff = candidate;
+                        changedProps.Add("AssemblyInfo");
+                    }
+                }
+
                 entries.Add(new DiffEntry
                 {
                     RelativePath = leftFile.RelativePath,
                     Kind = isUnchanged ? DiffKind.Unchanged : (changedProps.Count > 0 ? DiffKind.Modified : DiffKind.Unchanged),
                     Left = leftFile,
                     Right = rightFile,
-                    ChangedProperties = changedProps.AsReadOnly()
+                    ChangedProperties = changedProps.AsReadOnly(),
+                    AssemblyDiff = assemblyDiff,
                 });
                 
                 leftIndex++;
