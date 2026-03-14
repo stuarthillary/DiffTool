@@ -4,4 +4,8 @@
     <RootNamespace>DiffTool.Core</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Mono.Cecil" />
+  </ItemGroup>
+
 </Project>
