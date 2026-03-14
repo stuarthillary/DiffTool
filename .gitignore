@@ -8,3 +8,5 @@ obj/
 *.csproj.nuget.*
 project.lock.json
 
+# Claude Code
+.claude/settings.local.json
