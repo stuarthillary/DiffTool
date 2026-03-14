@@ -67,9 +67,14 @@ public sealed class HtmlReportFormatter : IReportFormatter
         for (var i = 0; i < sortedEntries.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            var entry = sortedEntries[i];
+            var entry    = sortedEntries[i];
             var rowClass = i % 2 == 0 ? "row-even" : "row-odd";
+
             await w.WriteAsync(BuildEntryRow(entry, rowClass)).ConfigureAwait(false);
+
+            var detailRow = BuildAssemblyDetailRow(entry);
+            if (detailRow is not null)
+                await w.WriteAsync(detailRow).ConfigureAwait(false);
         }
 
         await w.WriteAsync("""
@@ -122,6 +127,18 @@ public sealed class HtmlReportFormatter : IReportFormatter
           .date { color: #64748b; white-space: nowrap; font-size: 0.8125rem; }
           .changes { color: #78716c; font-size: 0.75rem; font-style: italic; }
           footer { margin-top: 1.5rem; color: #94a3b8; font-size: 0.75rem; text-align: center; }
+          tr.asm-detail td { padding: 0; background: #f1f5f9; border-bottom: 2px solid #e2e8f0; }
+          tr.asm-detail details { padding: 0.375rem 1rem 0.75rem 2rem; }
+          tr.asm-detail summary { cursor: pointer; font-size: 0.8125rem; font-weight: 600; color: #475569; padding: 0.25rem 0; }
+          .asm-panel { margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 1.25rem; }
+          .asm-section h4 { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.3rem; }
+          .asm-section ul { list-style: none; padding: 0; margin: 0; }
+          .asm-section li { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.75rem; padding: 0.1rem 0; color: #334155; }
+          .asm-members { margin-left: 1rem; margin-top: 0.2rem; }
+          .asm-type-name { font-weight: 600; }
+          .asm-added-item { color: #15803d; }
+          .asm-removed-item { color: #b91c1c; }
+          .asm-note { font-size: 0.8125rem; color: #64748b; font-style: italic; }
         </style>
         </head>
         <body>
@@ -135,6 +152,10 @@ public sealed class HtmlReportFormatter : IReportFormatter
           <span><strong>Generated:</strong> {{generated}}</span>
         </div>
         """;
+
+    // -------------------------------------------------------------------------
+    // File entry row
+    // -------------------------------------------------------------------------
 
     private static string BuildEntryRow(DiffEntry entry, string rowClass)
     {
@@ -151,10 +172,7 @@ public sealed class HtmlReportFormatter : IReportFormatter
         var fileEntry = entry.Kind == DiffKind.Removed ? entry.Left : entry.Right;
         var sizeText  = FormatSize(fileEntry?.SizeBytes);
         var dateText  = fileEntry?.LastModifiedUtc.ToString("yyyy-MM-dd HH:mm") ?? "—";
-
-        var changesHtml = entry.ChangedProperties.Count > 0
-            ? Escape(string.Join(", ", entry.ChangedProperties))
-            : "";
+        var changesHtml = BuildChangesHtml(entry);
 
         return $"""
             <tr class="{rowClass}">
@@ -165,6 +183,162 @@ public sealed class HtmlReportFormatter : IReportFormatter
               <td class="changes">{changesHtml}</td>
             </tr>
             """;
+    }
+
+    private static string BuildChangesHtml(DiffEntry entry)
+    {
+        // Modified assembly with structural diff — show type-count summary.
+        if (entry.AssemblyDiff is { } ad)
+        {
+            var parts = new List<string>();
+            if (ad.VersionChanged
+                && entry.Left?.AssemblyInfo is { } leftInfo
+                && entry.Right?.AssemblyInfo is { } rightInfo)
+            {
+                parts.Add($"v{Escape(leftInfo.Version)} &#8594; v{Escape(rightInfo.Version)}");
+            }
+            if (ad.AddedTypes.Count > 0)
+                parts.Add($"+{ad.AddedTypes.Count} type{Plural(ad.AddedTypes.Count)}");
+            if (ad.RemovedTypes.Count > 0)
+                parts.Add($"-{ad.RemovedTypes.Count} type{Plural(ad.RemovedTypes.Count)}");
+            if (ad.ModifiedTypes.Count > 0)
+                parts.Add($"~{ad.ModifiedTypes.Count} type{Plural(ad.ModifiedTypes.Count)}");
+            return string.Join(" &middot; ", parts);
+        }
+
+        // Added / Removed with assembly info — show public type count.
+        var asmInfo = (entry.Kind == DiffKind.Removed ? entry.Left : entry.Right)?.AssemblyInfo;
+        if (asmInfo is not null)
+        {
+            var n = asmInfo.PublicTypes.Count;
+            return $"{n} public type{Plural(n)}";
+        }
+
+        // Default — list changed property names.
+        return entry.ChangedProperties.Count > 0
+            ? Escape(string.Join(", ", entry.ChangedProperties))
+            : "";
+    }
+
+    // -------------------------------------------------------------------------
+    // Assembly detail row (emitted immediately after the file row)
+    // -------------------------------------------------------------------------
+
+    private static string? BuildAssemblyDetailRow(DiffEntry entry)
+    {
+        if (entry.AssemblyDiff is { } diff)
+            return BuildModifiedAssemblyDetail(entry, diff);
+
+        if (entry.Kind == DiffKind.Added && entry.Right?.AssemblyInfo is { } addedInfo)
+            return BuildAddedRemovedAssemblyDetail(addedInfo, isAdded: true);
+
+        if (entry.Kind == DiffKind.Removed && entry.Left?.AssemblyInfo is { } removedInfo)
+            return BuildAddedRemovedAssemblyDetail(removedInfo, isAdded: false);
+
+        return null;
+    }
+
+    private static string BuildModifiedAssemblyDetail(DiffEntry entry, AssemblyDiff diff)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<tr class=\"asm-detail\"><td colspan=\"5\"><details><summary>Assembly changes");
+
+        if (entry.Left?.AssemblyInfo is { } li && entry.Right?.AssemblyInfo is { } ri)
+        {
+            sb.Append($" &mdash; {Escape(ri.Name)}");
+            if (diff.VersionChanged)
+                sb.Append($" v{Escape(li.Version)} &#8594; v{Escape(ri.Version)}");
+        }
+
+        sb.Append("</summary><div class=\"asm-panel\">");
+
+        if (diff.AddedTypes.Count > 0)
+        {
+            sb.Append($"<div class=\"asm-section\"><h4>Added types ({diff.AddedTypes.Count})</h4><ul>");
+            foreach (var t in diff.AddedTypes)
+                sb.Append($"<li class=\"asm-added-item\">+ {Escape(t.FullName)} ({Escape(t.Kind)})</li>");
+            sb.Append("</ul></div>");
+        }
+
+        if (diff.RemovedTypes.Count > 0)
+        {
+            sb.Append($"<div class=\"asm-section\"><h4>Removed types ({diff.RemovedTypes.Count})</h4><ul>");
+            foreach (var t in diff.RemovedTypes)
+                sb.Append($"<li class=\"asm-removed-item\">- {Escape(t.FullName)} ({Escape(t.Kind)})</li>");
+            sb.Append("</ul></div>");
+        }
+
+        if (diff.ModifiedTypes.Count > 0)
+        {
+            sb.Append($"<div class=\"asm-section\"><h4>Modified types ({diff.ModifiedTypes.Count})</h4><ul>");
+            foreach (var td in diff.ModifiedTypes)
+            {
+                sb.Append($"<li><span class=\"asm-type-name\">{Escape(td.FullName)}</span><ul class=\"asm-members\">");
+                foreach (var m in td.AddedMethods)
+                    sb.Append($"<li class=\"asm-added-item\">+ {Escape(FormatMethod(m))}</li>");
+                foreach (var m in td.RemovedMethods)
+                    sb.Append($"<li class=\"asm-removed-item\">- {Escape(FormatMethod(m))}</li>");
+                foreach (var p in td.AddedProperties)
+                    sb.Append($"<li class=\"asm-added-item\">+ {Escape(p.Name)} : {Escape(p.Type)}</li>");
+                foreach (var p in td.RemovedProperties)
+                    sb.Append($"<li class=\"asm-removed-item\">- {Escape(p.Name)} : {Escape(p.Type)}</li>");
+                foreach (var f in td.AddedFields)
+                    sb.Append($"<li class=\"asm-added-item\">+ {Escape(f.Name)} : {Escape(f.Type)}</li>");
+                foreach (var f in td.RemovedFields)
+                    sb.Append($"<li class=\"asm-removed-item\">- {Escape(f.Name)} : {Escape(f.Type)}</li>");
+                sb.Append("</ul></li>");
+            }
+            sb.Append("</ul></div>");
+        }
+
+        if (!diff.AddedTypes.Any() && !diff.RemovedTypes.Any() && !diff.ModifiedTypes.Any())
+            sb.Append("<div class=\"asm-section\"><p class=\"asm-note\">Version changed &mdash; API surface unchanged.</p></div>");
+
+        sb.Append("</div></details></td></tr>");
+        return sb.ToString();
+    }
+
+    private static string BuildAddedRemovedAssemblyDetail(AssemblyInfo info, bool isAdded)
+    {
+        var label     = isAdded ? "New .NET assembly" : "Removed .NET assembly";
+        var itemClass = isAdded ? "asm-added-item" : "asm-removed-item";
+        var prefix    = isAdded ? "+" : "-";
+        var n         = info.PublicTypes.Count;
+
+        var sb = new StringBuilder();
+        sb.Append($"<tr class=\"asm-detail\"><td colspan=\"5\"><details><summary>{label} &mdash; {Escape(info.Name)} v{Escape(info.Version)}");
+        if (n > 0)
+            sb.Append($" &mdash; {n} public type{Plural(n)}");
+        sb.Append("</summary><div class=\"asm-panel\"><div class=\"asm-section\">");
+
+        if (n > 0)
+        {
+            sb.Append($"<h4>Public types ({n})</h4><ul>");
+            foreach (var t in info.PublicTypes)
+                sb.Append($"<li class=\"{itemClass}\">{prefix} {Escape(t.FullName)} ({Escape(t.Kind)})</li>");
+            sb.Append("</ul>");
+        }
+        else
+        {
+            sb.Append("<p class=\"asm-note\">No public types.</p>");
+        }
+
+        sb.Append("</div></div></details></td></tr>");
+        return sb.ToString();
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static string FormatMethod(AssemblyMethodInfo m)
+    {
+        var paramTypes = m.Parameters.Select(p =>
+        {
+            var lastSpace = p.LastIndexOf(' ');
+            return lastSpace >= 0 ? p[..lastSpace] : p;
+        });
+        return $"{m.Name}({string.Join(", ", paramTypes)}) : {m.ReturnType}";
     }
 
     private static int KindSortOrder(DiffKind kind) => kind switch
@@ -184,6 +358,8 @@ public sealed class HtmlReportFormatter : IReportFormatter
         if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):0.0} MB";
         return $"{bytes / (1024.0 * 1024 * 1024):0.0} GB";
     }
+
+    private static string Plural(int count) => count == 1 ? "" : "s";
 
     private static string Escape(string text) =>
         text.Replace("&", "&amp;")

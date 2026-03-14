@@ -29,4 +29,12 @@ public sealed class DiffEntry
     /// List of property names that changed (e.g., "Hash", "SizeBytes", "Attributes"). Empty for Added/Removed.
     /// </summary>
     public IReadOnlyList<string> ChangedProperties { get; init; } = [];
+
+    /// <summary>
+    /// Structural diff of the assembly's public API surface. Populated only when <see cref="Kind"/>
+    /// is <see cref="DiffKind.Modified"/>, both <see cref="Left"/> and <see cref="Right"/> carry
+    /// <see cref="FileEntry.AssemblyInfo"/>, and the API surface actually changed.
+    /// Null for non-assembly files, Added/Removed entries, and when no inspector was configured.
+    /// </summary>
+    public AssemblyDiff? AssemblyDiff { get; init; }
 }

@@ -287,4 +287,198 @@ public sealed class HtmlReportFormatterTests
         await Assert.That(html).Contains("folder&lt;test&gt;/file&amp;name.txt");
         await Assert.That(html.Contains("folder<test>")).IsFalse();
     }
+
+    // ── Assembly detail rows ─────────────────────────────────────────────────
+
+    private static AssemblyInfo MakeAssemblyInfo(string name, string version, params AssemblyTypeInfo[] types)
+        => new()
+        {
+            Name        = name,
+            Version     = version,
+            PublicTypes = types.OrderBy(t => t.FullName).ToList().AsReadOnly(),
+        };
+
+    private static AssemblyTypeInfo MakeTypeInfo(string fullName, string kind = "class")
+        => new()
+        {
+            FullName   = fullName,
+            Kind       = kind,
+            Interfaces = [],
+            Modifiers  = [],
+            Methods    = [],
+            Properties = [],
+            Fields     = [],
+        };
+
+    private static AssemblyMethodInfo MakeMethodInfo(string name, string returnType = "System.Void", params string[] paramTypes)
+        => new()
+        {
+            Name       = name,
+            ReturnType = returnType,
+            Parameters = paramTypes.Select((t, i) => $"{t} arg{i}").ToList().AsReadOnly(),
+            Modifiers  = [],
+        };
+
+    [Test]
+    public async Task AddedEntryWithAssemblyInfo_RendersDetailRow()
+    {
+        var info = MakeAssemblyInfo("MyLib", "1.0.0.0", MakeTypeInfo("MyLib.ServiceA"), MakeTypeInfo("MyLib.ServiceB"));
+        var entry = new DiffEntry
+        {
+            RelativePath = "MyLib.dll",
+            Kind         = DiffKind.Added,
+            Right        = new FileEntry { RelativePath = "MyLib.dll", SizeBytes = 1024, LastModifiedUtc = T1, Hash = "abc", AssemblyInfo = info },
+        };
+        var diff = MakeDiff(entries: [entry]);
+        var html = await RenderAsync(diff);
+
+        await Assert.That(html).Contains("<tr class=\"asm-detail\">");
+        await Assert.That(html).Contains("New .NET assembly");
+        await Assert.That(html).Contains("MyLib");
+        await Assert.That(html).Contains("MyLib.ServiceA");
+        await Assert.That(html).Contains("MyLib.ServiceB");
+        await Assert.That(html).Contains("asm-added-item");
+    }
+
+    [Test]
+    public async Task RemovedEntryWithAssemblyInfo_RendersDetailRow()
+    {
+        var info = MakeAssemblyInfo("Legacy", "0.9.0.0", MakeTypeInfo("Legacy.OldClass"));
+        var entry = new DiffEntry
+        {
+            RelativePath = "Legacy.dll",
+            Kind         = DiffKind.Removed,
+            Left         = new FileEntry { RelativePath = "Legacy.dll", SizeBytes = 512, LastModifiedUtc = T1, Hash = "xyz", AssemblyInfo = info },
+        };
+        var diff = MakeDiff(entries: [entry]);
+        var html = await RenderAsync(diff);
+
+        await Assert.That(html).Contains("<tr class=\"asm-detail\">");
+        await Assert.That(html).Contains("Removed .NET assembly");
+        await Assert.That(html).Contains("Legacy.OldClass");
+        await Assert.That(html).Contains("asm-removed-item");
+    }
+
+    [Test]
+    public async Task ModifiedEntryWithAssemblyDiff_RendersDetailRowWithTypeChanges()
+    {
+        var addedType   = MakeTypeInfo("Foo.NewService");
+        var removedType = MakeTypeInfo("Foo.OldHelper");
+        var assemblyDiff = new AssemblyDiff
+        {
+            VersionChanged         = true,
+            TargetFrameworkChanged = false,
+            AddedTypes             = [addedType],
+            RemovedTypes           = [removedType],
+            ModifiedTypes          = [],
+        };
+        var leftInfo  = MakeAssemblyInfo("Foo", "1.0.0.0");
+        var rightInfo = MakeAssemblyInfo("Foo", "2.0.0.0");
+        var entry = new DiffEntry
+        {
+            RelativePath      = "Foo.dll",
+            Kind              = DiffKind.Modified,
+            Left              = new FileEntry { RelativePath = "Foo.dll", SizeBytes = 100, LastModifiedUtc = T1, Hash = "old", AssemblyInfo = leftInfo },
+            Right             = new FileEntry { RelativePath = "Foo.dll", SizeBytes = 200, LastModifiedUtc = T2, Hash = "new", AssemblyInfo = rightInfo },
+            ChangedProperties = ["Hash", "AssemblyInfo"],
+            AssemblyDiff      = assemblyDiff,
+        };
+        var diff = MakeDiff(entries: [entry]);
+        var html = await RenderAsync(diff);
+
+        await Assert.That(html).Contains("<tr class=\"asm-detail\">");
+        await Assert.That(html).Contains("Assembly changes");
+        await Assert.That(html).Contains("Foo.NewService");
+        await Assert.That(html).Contains("Foo.OldHelper");
+        await Assert.That(html).Contains("Added types");
+        await Assert.That(html).Contains("Removed types");
+    }
+
+    [Test]
+    public async Task ModifiedEntryWithAssemblyDiff_ChangesColumnShowsTypeSummary()
+    {
+        var assemblyDiff = new AssemblyDiff
+        {
+            VersionChanged         = false,
+            TargetFrameworkChanged = false,
+            AddedTypes             = [MakeTypeInfo("Foo.A"), MakeTypeInfo("Foo.B")],
+            RemovedTypes           = [MakeTypeInfo("Foo.C")],
+            ModifiedTypes          = [],
+        };
+        var entry = new DiffEntry
+        {
+            RelativePath      = "Foo.dll",
+            Kind              = DiffKind.Modified,
+            Left              = new FileEntry { RelativePath = "Foo.dll", SizeBytes = 100, LastModifiedUtc = T1, Hash = "old" },
+            Right             = new FileEntry { RelativePath = "Foo.dll", SizeBytes = 200, LastModifiedUtc = T2, Hash = "new" },
+            ChangedProperties = ["Hash", "AssemblyInfo"],
+            AssemblyDiff      = assemblyDiff,
+        };
+        var diff = MakeDiff(entries: [entry]);
+        var html = await RenderAsync(diff);
+
+        // Summary should show counts, not raw property names
+        await Assert.That(html).Contains("+2 types");
+        await Assert.That(html).Contains("-1 type");
+    }
+
+    [Test]
+    public async Task ModifiedEntryWithAssemblyDiff_MethodChangesRendered()
+    {
+        var typeDiff = new AssemblyTypeDiff
+        {
+            FullName          = "Foo.Scanner",
+            AddedMethods      = [MakeMethodInfo("ScanDeepAsync", "System.Threading.Tasks.Task", "System.String", "System.Boolean")],
+            RemovedMethods    = [],
+            AddedProperties   = [],
+            RemovedProperties = [],
+            AddedFields       = [],
+            RemovedFields     = [],
+        };
+        var assemblyDiff = new AssemblyDiff
+        {
+            VersionChanged         = false,
+            TargetFrameworkChanged = false,
+            AddedTypes             = [],
+            RemovedTypes           = [],
+            ModifiedTypes          = [typeDiff],
+        };
+        var entry = new DiffEntry
+        {
+            RelativePath      = "Foo.dll",
+            Kind              = DiffKind.Modified,
+            Left              = new FileEntry { RelativePath = "Foo.dll", SizeBytes = 100, LastModifiedUtc = T1, Hash = "old" },
+            Right             = new FileEntry { RelativePath = "Foo.dll", SizeBytes = 200, LastModifiedUtc = T2, Hash = "new" },
+            ChangedProperties = ["Hash", "AssemblyInfo"],
+            AssemblyDiff      = assemblyDiff,
+        };
+        var diff = MakeDiff(entries: [entry]);
+        var html = await RenderAsync(diff);
+
+        await Assert.That(html).Contains("Foo.Scanner");
+        await Assert.That(html).Contains("ScanDeepAsync");
+        await Assert.That(html).Contains("asm-added-item");
+    }
+
+    [Test]
+    public async Task ModifiedEntryWithoutAssemblyDiff_DefaultChangedPropertiesShown()
+    {
+        // When no AssemblyDiff is set (no inspector was run), falls back to ChangedProperties text.
+        var entry = ModifiedEntry("bin/app.dll", ["Hash", "SizeBytes"]);
+        var diff  = MakeDiff(entries: [entry]);
+        var html  = await RenderAsync(diff);
+
+        await Assert.That(html).Contains("Hash");
+        await Assert.That(html).Contains("SizeBytes");
+        await Assert.That(html.Contains("<tr class=\"asm-detail\">")).IsFalse();
+    }
+
+    [Test]
+    public async Task AddedEntryWithoutAssemblyInfo_NoDetailRow()
+    {
+        var diff = MakeDiff(entries: [AddedEntry("plain.txt")]);
+        var html = await RenderAsync(diff);
+
+        await Assert.That(html.Contains("<tr class=\"asm-detail\">")).IsFalse();
+    }
 }
