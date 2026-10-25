@@ -25,6 +25,19 @@ internal sealed class FakeAssemblyInspector : IAssemblyInspector
     }
 }
 
+internal sealed class CapturingAssemblyInspector : IAssemblyInspector
+{
+    public byte[]? Captured { get; private set; }
+
+    public AssemblyInfo? TryInspect(Stream stream)
+    {
+        using var copy = new MemoryStream();
+        stream.CopyTo(copy);
+        Captured = copy.ToArray();
+        return null;
+    }
+}
+
 internal sealed class FakeFileSystem : IFileSystem
 {
     private readonly string _rootPath;
@@ -72,8 +85,12 @@ internal sealed class FakeFileSystem : IFileSystem
 
     public bool IsDirectory(string path) => _entries.TryGetValue(path, out var e) && e.IsDir;
 
+    /// <summary>Number of times <see cref="OpenRead"/> was called, across all paths.</summary>
+    public int OpenReadCount { get; private set; }
+
     public Stream OpenRead(string path)
     {
+        OpenReadCount++;
         var entry = _entries[path];
         if (entry.ThrowOnRead) throw new IOException($"Simulated read error for: {path}");
         return new MemoryStream(entry.Content);
@@ -343,6 +360,52 @@ public class DirectoryScannerTests
     // -----------------------------------------------------------------------
     // 13. Assembly inspection — non-.NET binary inspector returns null
     // -----------------------------------------------------------------------
+
+    [Test]
+    public async Task ScanAsync_DllWithInspector_ReadsFileOnlyOnce()
+    {
+        var inspector = new FakeAssemblyInspector(new AssemblyInfo { Name = "TestLib", Version = "1.0.0.0", PublicTypes = [] });
+        var fs = new FakeFileSystem(RootPath);
+        fs.AddFile("lib.dll", 4, DateTimeOffset.UtcNow, "Archive", new byte[] { 1, 2, 3, 4 });
+        var scanner = new DirectoryScanner(fs, inspector);
+
+        await scanner.ScanAsync(RootPath);
+
+        await Assert.That(fs.OpenReadCount).IsEqualTo(1);
+        await Assert.That(inspector.CallCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ScanAsync_DllWithInspector_InspectorGetsWholeFileFromStartAndHashIsUnaffected()
+    {
+        var content = "assembly bytes"u8.ToArray();
+        var inspector = new CapturingAssemblyInspector();
+        var fs = new FakeFileSystem(RootPath);
+        fs.AddFile("lib.dll", content.Length, DateTimeOffset.UtcNow, "Archive", content);
+        var scanner = new DirectoryScanner(fs, inspector);
+
+        var snapshot = await scanner.ScanAsync(RootPath);
+
+        await Assert.That(inspector.Captured).IsNotNull();
+        await Assert.That(inspector.Captured!.SequenceEqual(content)).IsTrue();
+        var expectedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant();
+        await Assert.That(snapshot.Entries[0].Hash).IsEqualTo(expectedHash);
+    }
+
+    [Test]
+    public async Task ScanAsync_DllWithInspector_ReadErrorLeavesHashAndAssemblyInfoNull()
+    {
+        var inspector = new FakeAssemblyInspector(new AssemblyInfo { Name = "TestLib", Version = "1.0.0.0", PublicTypes = [] });
+        var fs = new FakeFileSystem(RootPath);
+        fs.AddFileWithReadError("locked.dll");
+        var scanner = new DirectoryScanner(fs, inspector);
+
+        var snapshot = await scanner.ScanAsync(RootPath);
+
+        await Assert.That(snapshot.Entries[0].Hash).IsNull();
+        await Assert.That(snapshot.Entries[0].AssemblyInfo).IsNull();
+        await Assert.That(inspector.CallCount).IsEqualTo(0);
+    }
 
     [Test]
     public async Task ScanAsync_DllWhereInspectorReturnsNull_AssemblyInfoIsNull()

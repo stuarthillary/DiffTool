@@ -1,3 +1,5 @@
+using System.IO.Enumeration;
+
 namespace DiffTool.Core.Scanning;
 
 /// <summary>
@@ -6,9 +8,33 @@ namespace DiffTool.Core.Scanning;
 /// </summary>
 public sealed class PhysicalFileSystem : IFileSystem
 {
+    /// <remarks>
+    /// Directory symlinks and junctions (reparse points) are returned as entries but never descended into,
+    /// so a link cycle cannot make a scan loop forever and linked trees are not counted twice.
+    /// Directories that cannot be read are skipped rather than aborting the whole enumeration.
+    /// </remarks>
     /// <inheritdoc />
     public IEnumerable<string> EnumerateFileSystemEntries(string rootPath, string searchPattern, SearchOption searchOption)
-        => Directory.EnumerateFileSystemEntries(rootPath, searchPattern, searchOption);
+    {
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = searchOption == SearchOption.AllDirectories,
+            AttributesToSkip = 0,
+            IgnoreInaccessible = true,
+            ReturnSpecialDirectories = false,
+        };
+
+        return new FileSystemEnumerable<string>(
+            rootPath,
+            static (ref FileSystemEntry entry) => entry.ToFullPath(),
+            options)
+        {
+            ShouldIncludePredicate = (ref FileSystemEntry entry) =>
+                FileSystemName.MatchesSimpleExpression(searchPattern, entry.FileName),
+            ShouldRecursePredicate = static (ref FileSystemEntry entry) =>
+                entry.IsDirectory && (entry.Attributes & FileAttributes.ReparsePoint) == 0,
+        };
+    }
 
     /// <inheritdoc />
     public bool IsDirectory(string path)

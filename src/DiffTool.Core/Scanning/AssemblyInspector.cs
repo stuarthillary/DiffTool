@@ -26,9 +26,8 @@ public sealed class AssemblyInspector : IAssemblyInspector
                     ? tfv.ToString()
                     : null;
 
-            var publicTypes = assembly.MainModule.Types
-                .Where(t => t.IsPublic && !t.Name.StartsWith('<'))
-                .OrderBy(t => t.FullName)
+            var publicTypes = EnumeratePublicTypes(assembly.MainModule.Types)
+                .OrderBy(t => t.FullName, StringComparer.Ordinal)
                 .Select(MapType)
                 .ToList()
                 .AsReadOnly();
@@ -48,25 +47,43 @@ public sealed class AssemblyInspector : IAssemblyInspector
         }
     }
 
+    /// <summary>
+    /// Yields publicly visible types, including public types nested inside other public types
+    /// (named "Outer/Inner"). Compiler-generated types, whose names start with '&lt;', are skipped.
+    /// </summary>
+    private static IEnumerable<TypeDefinition> EnumeratePublicTypes(IEnumerable<TypeDefinition> types)
+    {
+        foreach (var type in types)
+        {
+            if (!(type.IsPublic || type.IsNestedPublic) || type.Name.StartsWith('<'))
+                continue;
+
+            yield return type;
+
+            foreach (var nested in EnumeratePublicTypes(type.NestedTypes))
+                yield return nested;
+        }
+    }
+
     private static AssemblyTypeInfo MapType(TypeDefinition type)
     {
         var methods = type.Methods
             .Where(m => m.IsPublic && !m.IsSpecialName)
-            .OrderBy(m => m.Name)
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
             .Select(MapMethod)
             .ToList()
             .AsReadOnly();
 
         var properties = type.Properties
             .Where(p => p.GetMethod?.IsPublic == true || p.SetMethod?.IsPublic == true)
-            .OrderBy(p => p.Name)
+            .OrderBy(p => p.Name, StringComparer.Ordinal)
             .Select(MapProperty)
             .ToList()
             .AsReadOnly();
 
         var fields = type.Fields
-            .Where(f => f.IsPublic)
-            .OrderBy(f => f.Name)
+            .Where(f => f.IsPublic && !f.IsRuntimeSpecialName)
+            .OrderBy(f => f.Name, StringComparer.Ordinal)
             .Select(MapField)
             .ToList()
             .AsReadOnly();
@@ -78,7 +95,7 @@ public sealed class AssemblyInspector : IAssemblyInspector
             BaseType = GetBaseType(type),
             Interfaces = type.Interfaces
                 .Select(i => i.InterfaceType.FullName)
-                .OrderBy(x => x)
+                .OrderBy(x => x, StringComparer.Ordinal)
                 .ToList()
                 .AsReadOnly(),
             Modifiers = GetTypeModifiers(type).AsReadOnly(),

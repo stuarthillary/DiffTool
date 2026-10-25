@@ -274,6 +274,12 @@ public sealed class HtmlReportFormatter : IReportFormatter
             foreach (var td in diff.ModifiedTypes)
             {
                 sb.Append($"<li><span class=\"asm-type-name\">{Escape(td.FullName)}</span><ul class=\"asm-members\">");
+                foreach (var change in td.TypeChanges)
+                    sb.Append($"<li>~ {Escape(change)}</li>");
+                foreach (var i in td.AddedInterfaces)
+                    sb.Append($"<li class=\"asm-added-item\">+ implements {Escape(i)}</li>");
+                foreach (var i in td.RemovedInterfaces)
+                    sb.Append($"<li class=\"asm-removed-item\">- implements {Escape(i)}</li>");
                 foreach (var m in td.AddedMethods)
                     sb.Append($"<li class=\"asm-added-item\">+ {Escape(FormatMethod(m))}</li>");
                 foreach (var m in td.RemovedMethods)
@@ -286,6 +292,8 @@ public sealed class HtmlReportFormatter : IReportFormatter
                     sb.Append($"<li class=\"asm-added-item\">+ {Escape(f.Name)} : {Escape(f.Type)}</li>");
                 foreach (var f in td.RemovedFields)
                     sb.Append($"<li class=\"asm-removed-item\">- {Escape(f.Name)} : {Escape(f.Type)}</li>");
+                foreach (var change in td.ModifiedMembers)
+                    sb.Append($"<li>~ {Escape(change)}</li>");
                 sb.Append("</ul></li>");
             }
             sb.Append("</ul></div>");
