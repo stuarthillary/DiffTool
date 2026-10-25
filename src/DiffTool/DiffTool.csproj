@@ -3,6 +3,9 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>DiffTool</RootNamespace>
+    <PublishAot>true</PublishAot>
+    <!-- Mono.Cecil only trips trim warnings in its symbol-reader loading; AssemblyInspector sets ReadSymbols = false. -->
+    <NoWarn>$(NoWarn);IL2104</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

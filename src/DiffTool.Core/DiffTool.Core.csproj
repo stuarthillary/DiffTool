@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <RootNamespace>DiffTool.Core</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
