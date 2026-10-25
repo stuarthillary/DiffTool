@@ -17,9 +17,9 @@ dotnet run --project tests/DiffTool.Cli.Tests
 dotnet run --project tests/DiffTool.Core.Tests -- --treenode-filter "*/SnapshotDifferTests/*"
 
 # Run the CLI
-dotnet run --project src/DiffTool.Cli -- snapshot <directory> [--output <file>]
-dotnet run --project src/DiffTool.Cli -- diff <left.json> <right.json> [--output <file>]
-dotnet run --project src/DiffTool.Cli -- report <diff.json> [--format html] [--output <file>]
+dotnet run --project src/DiffTool -- snapshot <directory> [--output <file>]
+dotnet run --project src/DiffTool -- diff <left.json> <right.json> [--output <file>]
+dotnet run --project src/DiffTool -- report <diff.json> [--format html] [--output <file>]
 ```
 
 **Build constraints:** `TreatWarningsAsErrors=true` — all warnings must be resolved. Nullable annotations are enforced.
@@ -42,7 +42,7 @@ Directory → [DirectoryScanner] → DirectorySnapshot (JSON)
 
 **Projects:**
 - `DiffTool.Core` — domain models, scanning, diffing, serialization
-- `DiffTool.Cli` — `System.CommandLine` entry point with three subcommands: `snapshot`, `diff`, `report`
+- `DiffTool` — `System.CommandLine` entry point with three subcommands: `snapshot`, `diff`, `report`
 - `DiffTool.Reports` — report formatters (`IReportFormatter`); currently only `HtmlReportFormatter`
 
 **Key abstractions:**

@@ -10,7 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\DiffTool.Cli\DiffTool.Cli.csproj" />
+    <ProjectReference Include="..\..\src\DiffTool\DiffTool.csproj" />
   </ItemGroup>
 
 </Project>

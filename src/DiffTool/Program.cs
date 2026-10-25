@@ -6,7 +6,7 @@ using DiffTool.Core.Scanning;
 using DiffTool.Core.Serialization;
 using DiffTool.Reports;
 
-namespace DiffTool.Cli;
+namespace DiffTool;
 
 /// <summary>
 /// The DiffTool CLI. Wires up System.CommandLine with snapshot, diff, and report subcommands.
