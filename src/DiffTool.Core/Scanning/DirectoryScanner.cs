@@ -54,25 +54,32 @@ public sealed class DirectoryScanner
             {
                 long? size = null;
                 string? hash = null;
-                DateTimeOffset lastModified;
+                var lastModified = DateTimeOffset.MinValue;
                 string? attributes = null;
                 AssemblyInfo? assemblyInfo = null;
 
+                // Metadata is captured separately from the hash so an unreadable file keeps
+                // whatever metadata is available and does not look changed against a readable copy.
                 try
                 {
                     size = _fileSystem.GetFileSize(path);
                     lastModified = _fileSystem.GetLastWriteTimeUtc(path);
                     attributes = _fileSystem.GetAttributes(path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Debug.WriteLine($"[DirectoryScanner] Could not read metadata for '{path}': {ex.Message}");
+                }
 
+                try
+                {
                     await using var stream = _fileSystem.OpenRead(path);
                     var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
                     hash = Convert.ToHexString(hashBytes).ToLowerInvariant();
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    Debug.WriteLine($"[DirectoryScanner] Skipping '{path}': {ex.Message}");
-                    lastModified = DateTimeOffset.MinValue;
-                    size = null;
+                    Debug.WriteLine($"[DirectoryScanner] Skipping hash for '{path}': {ex.Message}");
                 }
 
                 if (_assemblyInspector != null && hash != null && IsAssemblyFile(path))

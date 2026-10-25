@@ -87,6 +87,7 @@ dotnet run --project src/DiffTool.Cli -- snapshot ./release-1.0 --inspect-assemb
 | `src/DiffTool.Cli` | `System.CommandLine` entry point with the `snapshot`, `diff` and `report` commands |
 | `tests/DiffTool.Core.Tests` | Tests for scanning, diffing and serialization |
 | `tests/DiffTool.Reports.Tests` | Tests for the HTML formatter |
+| `tests/DiffTool.Cli.Tests` | End-to-end tests for the CLI commands |
 
 ### Extension points
 
@@ -106,6 +107,7 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and are executable project
 ```bash
 dotnet run --project tests/DiffTool.Core.Tests
 dotnet run --project tests/DiffTool.Reports.Tests
+dotnet run --project tests/DiffTool.Cli.Tests
 
 # a single test class
 dotnet run --project tests/DiffTool.Core.Tests -- --treenode-filter "*/SnapshotDifferTests/*"

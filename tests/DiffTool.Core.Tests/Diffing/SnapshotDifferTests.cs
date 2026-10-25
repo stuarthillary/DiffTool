@@ -314,6 +314,51 @@ public sealed class SnapshotDifferTests
     }
 
     [Test]
+    public async Task DirectoryLastModifiedChangedOnly_Unchanged()
+    {
+        var differ = new SnapshotDiffer();
+        var left = MakeSnapshot("C:/left", FixedTime,
+            new FileEntry { RelativePath = "dir", LastModifiedUtc = FixedTime, IsDirectory = true, Attributes = "Directory" });
+        var right = MakeSnapshot("C:/right", FixedTime2,
+            new FileEntry { RelativePath = "dir", LastModifiedUtc = FixedTime2, IsDirectory = true, Attributes = "Directory" });
+
+        var result = differ.Compare(left, right);
+
+        await Assert.That(result.Entries[0].Kind).IsEqualTo(DiffKind.Unchanged);
+        await Assert.That(result.Summary.Modified).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task DirectoryAttributesChanged_Modified()
+    {
+        var differ = new SnapshotDiffer();
+        var left = MakeSnapshot("C:/left", FixedTime,
+            new FileEntry { RelativePath = "dir", LastModifiedUtc = FixedTime, IsDirectory = true, Attributes = "Directory" });
+        var right = MakeSnapshot("C:/right", FixedTime2,
+            new FileEntry { RelativePath = "dir", LastModifiedUtc = FixedTime2, IsDirectory = true, Attributes = "Directory, Hidden" });
+
+        var result = differ.Compare(left, right);
+
+        await Assert.That(result.Entries[0].Kind).IsEqualTo(DiffKind.Modified);
+        await Assert.That(result.Entries[0].ChangedProperties.Contains("Attributes")).IsTrue();
+        await Assert.That(result.Entries[0].ChangedProperties.Contains("LastModifiedUtc")).IsFalse();
+    }
+
+    [Test]
+    public async Task UnreadableFile_SameMetadata_Unchanged()
+    {
+        var differ = new SnapshotDiffer();
+        var left = MakeSnapshot("C:/left", FixedTime,
+            new FileEntry { RelativePath = "locked.bin", SizeBytes = 10, Hash = "abc", LastModifiedUtc = FixedTime, Attributes = "Archive" });
+        var right = MakeSnapshot("C:/right", FixedTime2,
+            new FileEntry { RelativePath = "locked.bin", SizeBytes = 10, Hash = null, LastModifiedUtc = FixedTime, Attributes = "Archive" });
+
+        var result = differ.Compare(left, right);
+
+        await Assert.That(result.Entries[0].Kind).IsEqualTo(DiffKind.Unchanged);
+    }
+
+    [Test]
     public async Task IsDirectoryChanged_Modified()
     {
         var differ = new SnapshotDiffer();
