@@ -461,6 +461,42 @@ public sealed class HtmlReportFormatterTests
     }
 
     [Test]
+    public async Task ModifiedEntryWithAssemblyDiff_TypeAndMemberDetailChangesRenderedAndEscaped()
+    {
+        var typeDiff = new AssemblyTypeDiff
+        {
+            FullName          = "Foo.Widget",
+            AddedMethods      = [],
+            RemovedMethods    = [],
+            AddedProperties   = [],
+            RemovedProperties = [],
+            AddedFields       = [],
+            RemovedFields     = [],
+            AddedInterfaces   = ["Foo.INew"],
+            RemovedInterfaces = ["Foo.IOld"],
+            TypeChanges       = ["base type: Foo.A -> Foo.B"],
+            ModifiedMembers   = ["Run(): return type System.Void -> List<System.String>"],
+        };
+        var entry = new DiffEntry
+        {
+            RelativePath      = "Foo.dll",
+            Kind              = DiffKind.Modified,
+            Left              = new FileEntry { RelativePath = "Foo.dll", SizeBytes = 100, LastModifiedUtc = T1, Hash = "old" },
+            Right             = new FileEntry { RelativePath = "Foo.dll", SizeBytes = 200, LastModifiedUtc = T2, Hash = "new" },
+            ChangedProperties = ["Hash", "AssemblyInfo"],
+            AssemblyDiff      = new AssemblyDiff { AddedTypes = [], RemovedTypes = [], ModifiedTypes = [typeDiff] },
+        };
+
+        var html = await RenderAsync(MakeDiff(entries: [entry]));
+
+        await Assert.That(html).Contains("base type: Foo.A -&gt; Foo.B");
+        await Assert.That(html).Contains("+ implements Foo.INew");
+        await Assert.That(html).Contains("- implements Foo.IOld");
+        await Assert.That(html).Contains("List&lt;System.String&gt;");
+        await Assert.That(html).DoesNotContain("List<System.String>");
+    }
+
+    [Test]
     public async Task ModifiedEntryWithoutAssemblyDiff_DefaultChangedPropertiesShown()
     {
         // When no AssemblyDiff is set (no inspector was run), falls back to ChangedProperties text.

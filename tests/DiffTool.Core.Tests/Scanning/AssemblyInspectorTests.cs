@@ -58,7 +58,7 @@ public class AssemblyInspectorTests
         var result = inspector.TryInspect(stream)!;
         var names = result.PublicTypes.Select(t => t.FullName).ToList();
 
-        await Assert.That(names.SequenceEqual(names.OrderBy(x => x))).IsTrue();
+        await Assert.That(names.SequenceEqual(names.OrderBy(x => x, StringComparer.Ordinal))).IsTrue();
     }
 
     // -----------------------------------------------------------------------

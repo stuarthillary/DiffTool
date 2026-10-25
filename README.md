@@ -32,7 +32,7 @@ All commands are run through the CLI project (or the built `DiffTool.Cli` execut
 dotnet run --project src/DiffTool.Cli -- snapshot <directory> [--output <file>] [--inspect-assemblies]
 ```
 
-Walks the directory recursively and records, for each file and subdirectory: relative path (forward-slash normalized), SHA-256 hash (files only), size, last-modified time (UTC) and attributes. Files that cannot be read (I/O or permission errors) are recorded without a hash or size instead of aborting the scan. The snapshot also records the root path, capture time and machine name.
+Walks the directory recursively and records, for each file and subdirectory: relative path (forward-slash normalized), SHA-256 hash (files only), size, last-modified time (UTC) and attributes. Files that cannot be read (I/O or permission errors) are recorded without a hash, keeping whatever size, timestamp and attributes could be read, instead of aborting the scan; directories that cannot be listed are skipped. Directory symlinks and junctions are listed as entries but not followed, so link cycles cannot loop. The snapshot also records the root path, capture time and machine name.
 
 ### 2. Diff two snapshots
 
@@ -49,7 +49,7 @@ dotnet run --project src/DiffTool.Cli -- diff <left.json> <right.json> [--output
 | `Modified` | Present in both with differing content or metadata |
 | `Unchanged` | Present in both, identical |
 
-Two files with the same hash are `Unchanged` even if their timestamps differ. For modified entries, `changedProperties` lists what differed (`Hash`, `SizeBytes`, `LastModifiedUtc`, `Attributes`, `IsDirectory`). A one-line summary (`N added, N removed, N modified, N unchanged`) is also printed to the console.
+Two files with the same hash are `Unchanged` even if their timestamps differ. For modified entries, `changedProperties` lists what differed (`Hash`, `SizeBytes`, `LastModifiedUtc`, `Attributes`, `IsDirectory`). Directories are compared on attributes only (their timestamp changes whenever a child does). A one-line summary (`N added, N removed, N modified, N unchanged`) is written to stderr, so piped JSON stays valid.
 
 ### 3. Generate a report
 
@@ -70,7 +70,7 @@ dotnet run --project src/DiffTool.Cli -- report diff.json -o report.html
 
 ## .NET assembly diffing
 
-The core library can also compare the **public API surface** of `.dll`/`.exe` files using [Mono.Cecil](https://github.com/jbevain/cecil). When a scanner is given an `IAssemblyInspector`, each .NET assembly entry carries its name, version, target framework and public types (with their methods, properties and fields). When a modified assembly is diffed, the entry gets an `AssemblyDiff` listing added/removed types, added/removed members, and version or target-framework changes. The HTML report includes this detail.
+The core library can also compare the **public API surface** of `.dll`/`.exe` files using [Mono.Cecil](https://github.com/jbevain/cecil). When a scanner is given an `IAssemblyInspector`, each .NET assembly entry carries its name, version, target framework and public types (with their methods, properties and fields). When a modified assembly is diffed, the entry gets an `AssemblyDiff` listing added/removed types, added/removed members, and version or target-framework changes. Besides added/removed types and members, it reports changes to a type's kind, base type, modifiers and interfaces, and to a member's return type, modifiers, property accessors and constant values. Public nested types are included (named `Outer/Inner`); protected members and non-public types are not part of the compared surface. The HTML report includes this detail.
 
 From the CLI, assembly metadata is opt-in: pass `--inspect-assemblies` (`-a`) to `snapshot`. Without it, snapshots contain no assembly metadata and assembly diffs are not produced.
 

@@ -31,8 +31,9 @@ public sealed class AssemblyDiff
 /// <summary>
 /// Member-level diff for a single type whose public surface changed between two assembly versions.
 /// Added and removed members are represented as full objects from the right and left assemblies
-/// respectively. A signature change (e.g. return type, parameter types) appears as one remove
-/// and one add, keyed on the full signature.
+/// respectively. A change to a member's identity (parameter types, property or field type) appears
+/// as one remove and one add, keyed on the full signature. Changes that keep the key but alter the
+/// member (return type, modifiers, accessors, constant value) are described in <see cref="ModifiedMembers"/>.
 /// </summary>
 public sealed class AssemblyTypeDiff
 {
@@ -46,8 +47,28 @@ public sealed class AssemblyTypeDiff
     public required IReadOnlyList<AssemblyFieldInfo> AddedFields { get; init; }
     public required IReadOnlyList<AssemblyFieldInfo> RemovedFields { get; init; }
 
+    /// <summary>Interfaces implemented only by the right (newer) type.</summary>
+    public IReadOnlyList<string> AddedInterfaces { get; init; } = [];
+
+    /// <summary>Interfaces implemented only by the left (older) type.</summary>
+    public IReadOnlyList<string> RemovedInterfaces { get; init; } = [];
+
+    /// <summary>
+    /// Human-readable changes to the type itself (kind, base type, modifiers),
+    /// e.g. "base type: A -> B".
+    /// </summary>
+    public IReadOnlyList<string> TypeChanges { get; init; } = [];
+
+    /// <summary>
+    /// Human-readable changes to members present in both versions under the same key,
+    /// e.g. "Run(): return type System.Void -> System.String" or "Name: setter removed".
+    /// </summary>
+    public IReadOnlyList<string> ModifiedMembers { get; init; } = [];
+
     public bool HasChanges =>
         AddedMethods.Count > 0 || RemovedMethods.Count > 0 ||
         AddedProperties.Count > 0 || RemovedProperties.Count > 0 ||
-        AddedFields.Count > 0 || RemovedFields.Count > 0;
+        AddedFields.Count > 0 || RemovedFields.Count > 0 ||
+        AddedInterfaces.Count > 0 || RemovedInterfaces.Count > 0 ||
+        TypeChanges.Count > 0 || ModifiedMembers.Count > 0;
 }

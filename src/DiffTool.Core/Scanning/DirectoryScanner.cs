@@ -71,28 +71,33 @@ public sealed class DirectoryScanner
                     Debug.WriteLine($"[DirectoryScanner] Could not read metadata for '{path}': {ex.Message}");
                 }
 
+                // Assemblies are buffered so the file is read from disk once for both hashing and
+                // inspection; everything else is streamed straight into the hash.
+                var inspect = _assemblyInspector != null && IsAssemblyFile(path);
+
                 try
                 {
                     await using var stream = _fileSystem.OpenRead(path);
-                    var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-                    hash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                    if (inspect)
+                    {
+                        var buffer = new MemoryStream();
+                        await stream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+                        buffer.Position = 0;
+                        hash = Convert.ToHexString(await SHA256.HashDataAsync(buffer, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
+                        buffer.Position = 0;
+                        assemblyInfo = _assemblyInspector!.TryInspect(buffer);
+                    }
+                    else
+                    {
+                        var hashBytes = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+                        hash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                    }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     Debug.WriteLine($"[DirectoryScanner] Skipping hash for '{path}': {ex.Message}");
-                }
-
-                if (_assemblyInspector != null && hash != null && IsAssemblyFile(path))
-                {
-                    try
-                    {
-                        await using var assemblyStream = _fileSystem.OpenRead(path);
-                        assemblyInfo = _assemblyInspector.TryInspect(assemblyStream);
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        Debug.WriteLine($"[DirectoryScanner] Could not inspect assembly '{path}': {ex.Message}");
-                    }
+                    hash = null;
+                    assemblyInfo = null;
                 }
 
                 entries.Add(new FileEntry
