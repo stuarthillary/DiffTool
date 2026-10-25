@@ -115,3 +115,7 @@ dotnet run --project tests/DiffTool.Core.Tests -- --treenode-filter "*/SnapshotD
 ```
 
 The build treats warnings as errors and enforces nullable annotations.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
