@@ -11,6 +11,7 @@ dotnet build DiffTool.slnx
 # Run all tests
 dotnet run --project tests/DiffTool.Core.Tests
 dotnet run --project tests/DiffTool.Reports.Tests
+dotnet run --project tests/DiffTool.Cli.Tests
 
 # Run a single test by name (TUnit uses --treenode-filter)
 dotnet run --project tests/DiffTool.Core.Tests -- --treenode-filter "*/SnapshotDifferTests/*"

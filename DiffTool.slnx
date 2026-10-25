@@ -5,6 +5,7 @@
     <Project Path="src/DiffTool.Reports/DiffTool.Reports.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/DiffTool.Cli.Tests/DiffTool.Cli.Tests.csproj" />
     <Project Path="tests/DiffTool.Core.Tests/DiffTool.Core.Tests.csproj" />
     <Project Path="tests/DiffTool.Reports.Tests/DiffTool.Reports.Tests.csproj" />
   </Folder>

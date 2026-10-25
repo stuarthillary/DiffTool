@@ -9,10 +9,10 @@ using DiffTool.Reports;
 namespace DiffTool.Cli;
 
 /// <summary>
-/// Entry point for the DiffTool CLI.
-/// Wires up System.CommandLine with snapshot, diff, and report subcommands.
+/// The DiffTool CLI. Wires up System.CommandLine with snapshot, diff, and report subcommands.
+/// Output streams are injected so the commands can be tested without touching the process console.
 /// </summary>
-public static class Program
+public sealed class CliApp
 {
     private static readonly JsonSerializerOptions s_diffJsonOptions = new()
     {
@@ -20,7 +20,22 @@ public static class Program
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public static int Main(string[] args)
+    private readonly Func<Stream> _openStandardOutput;
+    private readonly TextWriter _stdout;
+    private readonly TextWriter _stderr;
+
+    /// <param name="openStandardOutput">Opens the binary stdout stream used when <c>--output</c> is not given.</param>
+    /// <param name="stdout">Text writer for informational messages and help.</param>
+    /// <param name="stderr">Text writer for errors and the diff summary.</param>
+    public CliApp(Func<Stream> openStandardOutput, TextWriter stdout, TextWriter stderr)
+    {
+        _openStandardOutput = openStandardOutput;
+        _stdout = stdout;
+        _stderr = stderr;
+    }
+
+    /// <summary>Runs the CLI and returns the process exit code.</summary>
+    public int Run(string[] args)
     {
         var rootCommand = new RootCommand("DiffTool — scan directory trees, compare snapshots, generate drift reports.");
 
@@ -29,10 +44,32 @@ public static class Program
         rootCommand.Add(BuildReportCommand());
 
         var parseResult = rootCommand.Parse(args);
-        return parseResult.Invoke();
+        return parseResult.Invoke(new InvocationConfiguration { Output = _stdout, Error = _stderr });
     }
 
-    private static Command BuildSnapshotCommand()
+    /// <summary>
+    /// Runs a command body, converting expected I/O and format failures into an error message and exit code 1.
+    /// </summary>
+    private int Guard(Func<int> body)
+    {
+        try
+        {
+            return body();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException)
+        {
+            _stderr.WriteLine($"Error: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private int Fail(string message, int exitCode = 1)
+    {
+        _stderr.WriteLine(message);
+        return exitCode;
+    }
+
+    private Command BuildSnapshotCommand()
     {
         var directoryArg = new Argument<DirectoryInfo>("directory")
         {
@@ -54,7 +91,7 @@ public static class Program
         command.Add(outputOption);
         command.Add(inspectAssembliesOption);
 
-        command.SetAction(parseResult =>
+        command.SetAction(parseResult => Guard(() =>
         {
             var directory = parseResult.GetValue(directoryArg);
             var output = parseResult.GetValue(outputOption);
@@ -62,9 +99,7 @@ public static class Program
 
             if (directory == null || !directory.Exists)
             {
-                Console.Error.WriteLine($"Error: directory '{directory?.FullName}' does not exist.");
-                Environment.ExitCode = 1;
-                return;
+                return Fail($"Error: directory '{directory?.FullName}' does not exist.");
             }
 
             var scanner = new DirectoryScanner(
@@ -78,19 +113,21 @@ public static class Program
             {
                 using var stream = output.Open(FileMode.Create, FileAccess.Write);
                 serializer.SerializeAsync(snapshot, stream, CancellationToken.None).GetAwaiter().GetResult();
-                Console.WriteLine($"Snapshot saved to {output.FullName}");
+                _stdout.WriteLine($"Snapshot saved to {output.FullName}");
             }
             else
             {
-                using var stream = Console.OpenStandardOutput();
+                using var stream = _openStandardOutput();
                 serializer.SerializeAsync(snapshot, stream, CancellationToken.None).GetAwaiter().GetResult();
             }
-        });
+
+            return 0;
+        }));
 
         return command;
     }
 
-    private static Command BuildDiffCommand()
+    private Command BuildDiffCommand()
     {
         var leftArg = new Argument<FileInfo>("left")
         {
@@ -112,7 +149,7 @@ public static class Program
         command.Add(rightArg);
         command.Add(outputOption);
 
-        command.SetAction(parseResult =>
+        command.SetAction(parseResult => Guard(() =>
         {
             var left = parseResult.GetValue(leftArg);
             var right = parseResult.GetValue(rightArg);
@@ -120,16 +157,12 @@ public static class Program
 
             if (left == null || !left.Exists)
             {
-                Console.Error.WriteLine($"Error: left snapshot file '{left?.FullName}' does not exist.");
-                Environment.ExitCode = 1;
-                return;
+                return Fail($"Error: left snapshot file '{left?.FullName}' does not exist.");
             }
 
             if (right == null || !right.Exists)
             {
-                Console.Error.WriteLine($"Error: right snapshot file '{right?.FullName}' does not exist.");
-                Environment.ExitCode = 1;
-                return;
+                return Fail($"Error: right snapshot file '{right?.FullName}' does not exist.");
             }
 
             var serializer = new JsonSnapshotSerializer();
@@ -150,22 +183,24 @@ public static class Program
             {
                 using var stream = output.Open(FileMode.Create, FileAccess.Write);
                 JsonSerializer.SerializeAsync(stream, diff, s_diffJsonOptions, CancellationToken.None).GetAwaiter().GetResult();
-                Console.WriteLine($"Diff saved to {output.FullName}");
+                _stdout.WriteLine($"Diff saved to {output.FullName}");
             }
             else
             {
-                using var stream = Console.OpenStandardOutput();
+                using var stream = _openStandardOutput();
                 JsonSerializer.SerializeAsync(stream, diff, s_diffJsonOptions, CancellationToken.None).GetAwaiter().GetResult();
             }
 
             var summary = diff.Summary;
-            Console.WriteLine($"{summary.Added} added, {summary.Removed} removed, {summary.Modified} modified, {summary.Unchanged} unchanged");
-        });
+            // Stderr, so it cannot corrupt the diff JSON when that is written to stdout.
+            _stderr.WriteLine($"{summary.Added} added, {summary.Removed} removed, {summary.Modified} modified, {summary.Unchanged} unchanged");
+            return 0;
+        }));
 
         return command;
     }
 
-    private static Command BuildReportCommand()
+    private Command BuildReportCommand()
     {
         var diffArg = new Argument<FileInfo>("diff-file")
         {
@@ -188,7 +223,7 @@ public static class Program
         command.Add(formatOption);
         command.Add(outputOption);
 
-        command.SetAction(parseResult =>
+        command.SetAction(parseResult => Guard(() =>
         {
             var diffFile = parseResult.GetValue(diffArg);
             var format = parseResult.GetValue(formatOption);
@@ -196,9 +231,7 @@ public static class Program
 
             if (diffFile == null || !diffFile.Exists)
             {
-                Console.Error.WriteLine($"Error: diff file '{diffFile?.FullName}' does not exist.");
-                Environment.ExitCode = 1;
-                return;
+                return Fail($"Error: diff file '{diffFile?.FullName}' does not exist.");
             }
 
             SnapshotDiff? diff;
@@ -209,9 +242,7 @@ public static class Program
 
             if (diff == null)
             {
-                Console.Error.WriteLine($"Error: failed to deserialize diff file '{diffFile.FullName}'.");
-                Environment.ExitCode = 1;
-                return;
+                return Fail($"Error: failed to deserialize diff file '{diffFile.FullName}'.");
             }
 
             IReportFormatter? formatter = format?.ToLowerInvariant() switch
@@ -222,32 +253,31 @@ public static class Program
 
             if (formatter == null)
             {
-                Console.Error.WriteLine($"Error: unknown report format '{format}'. Supported formats: html.");
-                Environment.ExitCode = 1;
-                return;
+                return Fail($"Error: unknown report format '{format}'. Supported formats: html.");
             }
 
-            try
+            if (output != null)
             {
-                if (output != null)
-                {
-                    using var stream = output.Open(FileMode.Create, FileAccess.Write);
-                    formatter.RenderAsync(diff, stream, CancellationToken.None).GetAwaiter().GetResult();
-                    Console.WriteLine($"Report saved to {output.FullName}");
-                }
-                else
-                {
-                    using var stream = Console.OpenStandardOutput();
-                    formatter.RenderAsync(diff, stream, CancellationToken.None).GetAwaiter().GetResult();
-                }
+                using var stream = output.Open(FileMode.Create, FileAccess.Write);
+                formatter.RenderAsync(diff, stream, CancellationToken.None).GetAwaiter().GetResult();
+                _stdout.WriteLine($"Report saved to {output.FullName}");
             }
-            catch (NotImplementedException)
+            else
             {
-                Console.Error.WriteLine($"Report format '{format}' is not yet implemented.");
-                Environment.ExitCode = 2;
+                using var stream = _openStandardOutput();
+                formatter.RenderAsync(diff, stream, CancellationToken.None).GetAwaiter().GetResult();
             }
-        });
+
+            return 0;
+        }));
 
         return command;
     }
+}
+
+/// <summary>Process entry point.</summary>
+public static class Program
+{
+    public static int Main(string[] args)
+        => new CliApp(Console.OpenStandardOutput, Console.Out, Console.Error).Run(args);
 }

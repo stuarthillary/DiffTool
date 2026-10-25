@@ -91,7 +91,10 @@ public sealed class SnapshotDiffer
                         changedProps.Add("SizeBytes");
                     }
 
-                    if (leftFile.LastModifiedUtc != rightFile.LastModifiedUtc)
+                    // A directory's mtime changes whenever a child is added or removed; the children
+                    // are reported on their own, so it would only add noise here.
+                    bool bothDirectories = leftFile.IsDirectory && rightFile.IsDirectory;
+                    if (!bothDirectories && leftFile.LastModifiedUtc != rightFile.LastModifiedUtc)
                     {
                         changedProps.Add("LastModifiedUtc");
                     }

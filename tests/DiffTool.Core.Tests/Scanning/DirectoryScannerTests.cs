@@ -296,8 +296,10 @@ public class DirectoryScannerTests
         // Entry should still appear — scanner tolerates unreadable files
         await Assert.That(snapshot.Entries.Count).IsEqualTo(1);
         await Assert.That(snapshot.Entries[0].Hash).IsNull();
-        // SizeBytes is expected to be null if the scanner zeroes out partial data on error
-        await Assert.That(snapshot.Entries[0].SizeBytes).IsNull();
+        // Metadata that could be read is retained so the file is not mistaken for a changed one
+        await Assert.That(snapshot.Entries[0].SizeBytes).IsNotNull();
+        await Assert.That(snapshot.Entries[0].LastModifiedUtc).IsNotEqualTo(DateTimeOffset.MinValue);
+        await Assert.That(snapshot.Entries[0].Attributes).IsNotNull();
     }
 
     // -----------------------------------------------------------------------
