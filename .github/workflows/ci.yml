@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build DiffTool.slnx -c Release
+
+      # TUnit test projects are executables, so they are run directly (see CLAUDE.md).
+      - name: Test Core
+        run: dotnet run --project tests/DiffTool.Core.Tests -c Release --no-build
+
+      - name: Test Reports
+        run: dotnet run --project tests/DiffTool.Reports.Tests -c Release --no-build
+
+      - name: Test Cli
+        run: dotnet run --project tests/DiffTool.Cli.Tests -c Release --no-build
+
+  native-aot:
+    name: Native AOT (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: build-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install native toolchain prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish
+        run: dotnet publish src/DiffTool -c Release -r ${{ matrix.rid }} -o publish
+
+      # The tests run on the JIT, so exercise the native binary end to end here.
+      - name: Smoke test
+        shell: bash
+        run: |
+          exe=publish/DiffTool
+          if [ "$RUNNER_OS" = "Windows" ]; then exe=publish/DiffTool.exe; fi
+          mkdir -p smoke
+          "$exe" snapshot src --inspect-assemblies -o smoke/a.json
+          "$exe" snapshot tests --inspect-assemblies -o smoke/b.json
+          "$exe" diff smoke/a.json smoke/b.json -o smoke/diff.json
+          "$exe" report smoke/diff.json -o smoke/report.html
+          test -s smoke/report.html
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DiffTool-${{ matrix.rid }}
+          path: |
+            publish/
+            !publish/*.pdb
+            !publish/*.dbg
+          if-no-files-found: error
