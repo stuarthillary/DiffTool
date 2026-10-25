@@ -44,14 +44,21 @@ public static class Program
             Description = "Output file path for the snapshot. Defaults to stdout."
         };
 
+        var inspectAssembliesOption = new Option<bool>("--inspect-assemblies", "-a")
+        {
+            Description = "Capture public API metadata for .NET assemblies (.dll/.exe) so diffs can report API changes."
+        };
+
         var command = new Command("snapshot", "Scan a directory tree and save a snapshot.");
         command.Add(directoryArg);
         command.Add(outputOption);
+        command.Add(inspectAssembliesOption);
 
         command.SetAction(parseResult =>
         {
             var directory = parseResult.GetValue(directoryArg);
             var output = parseResult.GetValue(outputOption);
+            var inspectAssemblies = parseResult.GetValue(inspectAssembliesOption);
 
             if (directory == null || !directory.Exists)
             {
@@ -60,7 +67,9 @@ public static class Program
                 return;
             }
 
-            var scanner = new DirectoryScanner(new PhysicalFileSystem());
+            var scanner = new DirectoryScanner(
+                new PhysicalFileSystem(),
+                inspectAssemblies ? new AssemblyInspector() : null);
             var snapshot = scanner.ScanAsync(directory.FullName, CancellationToken.None).GetAwaiter().GetResult();
 
             var serializer = new JsonSnapshotSerializer();
