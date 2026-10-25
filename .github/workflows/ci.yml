@@ -21,7 +21,7 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -53,7 +53,7 @@ jobs:
           - os: ubuntu-latest
             rid: linux-x64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v4
         with:
