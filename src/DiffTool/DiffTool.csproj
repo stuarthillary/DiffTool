@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <RootNamespace>DiffTool.Cli</RootNamespace>
+    <RootNamespace>DiffTool</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -139,7 +139,7 @@ public sealed class CliAppTests
 
         await Assert.That(run.ExitCode).IsEqualTo(0);
         await Assert.That(run.BinaryStdout).Contains("assemblyInfo");
-        await Assert.That(run.BinaryStdout).Contains("DiffTool.Cli.CliApp");
+        await Assert.That(run.BinaryStdout).Contains("DiffTool.CliApp");
     }
 
     // ---- diff ----------------------------------------------------------------

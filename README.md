@@ -24,12 +24,12 @@ dotnet build DiffTool.slnx
 
 ## Usage
 
-All commands are run through the CLI project (or the built `DiffTool.Cli` executable). Every command writes to stdout unless `--output` / `-o` is given.
+All commands are run through the CLI project (or the built `DiffTool` executable). Every command writes to stdout unless `--output` / `-o` is given.
 
 ### 1. Take a snapshot
 
 ```bash
-dotnet run --project src/DiffTool.Cli -- snapshot <directory> [--output <file>] [--inspect-assemblies]
+dotnet run --project src/DiffTool -- snapshot <directory> [--output <file>] [--inspect-assemblies]
 ```
 
 Walks the directory recursively and records, for each file and subdirectory: relative path (forward-slash normalized), SHA-256 hash (files only), size, last-modified time (UTC) and attributes. Files that cannot be read (I/O or permission errors) are recorded without a hash, keeping whatever size, timestamp and attributes could be read, instead of aborting the scan; directories that cannot be listed are skipped. Directory symlinks and junctions are listed as entries but not followed, so link cycles cannot loop. The snapshot also records the root path, capture time and machine name.
@@ -37,7 +37,7 @@ Walks the directory recursively and records, for each file and subdirectory: rel
 ### 2. Diff two snapshots
 
 ```bash
-dotnet run --project src/DiffTool.Cli -- diff <left.json> <right.json> [--output <file>]
+dotnet run --project src/DiffTool -- diff <left.json> <right.json> [--output <file>]
 ```
 
 `left` is the older/baseline snapshot and `right` the newer one. Each path is classified as:
@@ -54,7 +54,7 @@ Two files with the same hash are `Unchanged` even if their timestamps differ. Fo
 ### 3. Generate a report
 
 ```bash
-dotnet run --project src/DiffTool.Cli -- report <diff.json> [--format html] [--output <file>]
+dotnet run --project src/DiffTool -- report <diff.json> [--format html] [--output <file>]
 ```
 
 `--format` currently supports only `html` (the default).
@@ -62,10 +62,10 @@ dotnet run --project src/DiffTool.Cli -- report <diff.json> [--format html] [--o
 ### Example
 
 ```bash
-dotnet run --project src/DiffTool.Cli -- snapshot ./release-1.0 -o before.json
-dotnet run --project src/DiffTool.Cli -- snapshot ./release-1.1 -o after.json
-dotnet run --project src/DiffTool.Cli -- diff before.json after.json -o diff.json
-dotnet run --project src/DiffTool.Cli -- report diff.json -o report.html
+dotnet run --project src/DiffTool -- snapshot ./release-1.0 -o before.json
+dotnet run --project src/DiffTool -- snapshot ./release-1.1 -o after.json
+dotnet run --project src/DiffTool -- diff before.json after.json -o diff.json
+dotnet run --project src/DiffTool -- report diff.json -o report.html
 ```
 
 ## .NET assembly diffing
@@ -75,7 +75,7 @@ The core library can also compare the **public API surface** of `.dll`/`.exe` fi
 From the CLI, assembly metadata is opt-in: pass `--inspect-assemblies` (`-a`) to `snapshot`. Without it, snapshots contain no assembly metadata and assembly diffs are not produced.
 
 ```bash
-dotnet run --project src/DiffTool.Cli -- snapshot ./release-1.0 --inspect-assemblies -o before.json
+dotnet run --project src/DiffTool -- snapshot ./release-1.0 --inspect-assemblies -o before.json
 ```
 
 ## Solution layout
@@ -84,7 +84,7 @@ dotnet run --project src/DiffTool.Cli -- snapshot ./release-1.0 --inspect-assemb
 |---------|---------|
 | `src/DiffTool.Core` | Domain models, directory scanning, snapshot/assembly diffing, JSON serialization |
 | `src/DiffTool.Reports` | Report formatters (`IReportFormatter`); currently `HtmlReportFormatter` |
-| `src/DiffTool.Cli` | `System.CommandLine` entry point with the `snapshot`, `diff` and `report` commands |
+| `src/DiffTool` | `System.CommandLine` entry point with the `snapshot`, `diff` and `report` commands |
 | `tests/DiffTool.Core.Tests` | Tests for scanning, diffing and serialization |
 | `tests/DiffTool.Reports.Tests` | Tests for the HTML formatter |
 | `tests/DiffTool.Cli.Tests` | End-to-end tests for the CLI commands |
