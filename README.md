@@ -1,4 +1,5 @@
 # DiffTool
+[![CI](https://github.com/stuarthillary/DiffTool/actions/workflows/ci.yml/badge.svg)](https://github.com/stuarthillary/DiffTool/actions/workflows/ci.yml)
 
 A .NET 10 command-line tool for detecting drift between directory trees. It records a directory as a **snapshot** (a JSON file of every file's path, size, timestamp, attributes and SHA-256 hash), **diffs** two snapshots, and renders the result as an HTML **report**.
 
