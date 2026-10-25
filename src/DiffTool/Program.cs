@@ -14,12 +14,6 @@ namespace DiffTool;
 /// </summary>
 public sealed class CliApp
 {
-    private static readonly JsonSerializerOptions s_diffJsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     private readonly Func<Stream> _openStandardOutput;
     private readonly TextWriter _stdout;
     private readonly TextWriter _stderr;
@@ -182,13 +176,13 @@ public sealed class CliApp
             if (output != null)
             {
                 using var stream = output.Open(FileMode.Create, FileAccess.Write);
-                JsonSerializer.SerializeAsync(stream, diff, s_diffJsonOptions, CancellationToken.None).GetAwaiter().GetResult();
+                JsonSerializer.SerializeAsync(stream, diff, DiffJsonContext.Default.SnapshotDiff, CancellationToken.None).GetAwaiter().GetResult();
                 _stdout.WriteLine($"Diff saved to {output.FullName}");
             }
             else
             {
                 using var stream = _openStandardOutput();
-                JsonSerializer.SerializeAsync(stream, diff, s_diffJsonOptions, CancellationToken.None).GetAwaiter().GetResult();
+                JsonSerializer.SerializeAsync(stream, diff, DiffJsonContext.Default.SnapshotDiff, CancellationToken.None).GetAwaiter().GetResult();
             }
 
             var summary = diff.Summary;
@@ -237,7 +231,7 @@ public sealed class CliApp
             SnapshotDiff? diff;
             using (var diffStream = diffFile.OpenRead())
             {
-                diff = JsonSerializer.DeserializeAsync<SnapshotDiff>(diffStream, s_diffJsonOptions, CancellationToken.None).GetAwaiter().GetResult();
+                diff = JsonSerializer.DeserializeAsync(diffStream, DiffJsonContext.Default.SnapshotDiff, CancellationToken.None).GetAwaiter().GetResult();
             }
 
             if (diff == null)
